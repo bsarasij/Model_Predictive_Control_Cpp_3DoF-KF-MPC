@@ -1,4 +1,4 @@
-# MPC_CPP - Model Predictive Control Implementation
+# MPC_CPP - Model Predictive Control C++ Implementation (3DoF-KF MPC)
 
 A C++ implementation of Three-Degree-of-Freedom Kalman Filter Model Predictive Control (MPC) for a SIR (Susceptible-Infected-Recovered) epidemic model using OSQP solver and Eigen library. 
 See Banerjee et al. 2025 for algorithm details. https://doi.org/10.1021/acs.iecr.4c04583
