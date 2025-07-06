@@ -3,6 +3,8 @@
 A C++ implementation of Three-Degree-of-Freedom Kalman Filter Model Predictive Control (MPC) for a SIR (Susceptible-Infected-Recovered) epidemic model using OSQP solver and Eigen library. 
 See Banerjee et al. 2025 for algorithm details. https://doi.org/10.1021/acs.iecr.4c04583
 
+![kalman_schem_automatica](https://github.com/user-attachments/assets/43e342b0-42b6-4035-83f6-31b6b4365d5c)
+
 ## Features
 
 - **MPC Controller**: Implements a 3DoF-KF Model Predictive Controller with prediction and control horizons
