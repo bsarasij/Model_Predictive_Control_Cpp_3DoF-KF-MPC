@@ -69,7 +69,7 @@ public:
 
     struct Ctrl_Mat {
         Eigen::Matrix<double, ny* p, nx+ 2*ny> Sx;
-        Eigen::Matrix<double, ny* p, nu_m* m> Su;
+        Eigen::Matrix<double, ny* p, u_len_m> Su;
         Eigen::Matrix<double, ny* p, nu_d* m> Sd;
         Eigen::Matrix<double, ny* p, ny> Ip;
     };
@@ -99,125 +99,13 @@ public:
         ctrl_mat = controller_mat(aug_mat);
     }
 
-    static Noise_Model_Mat eval_noise_model(int ch) {
-        Eigen::Matrix<double, ny, ny> Aw;
-        Eigen::Matrix<double, ny, ny> Cw;
-
-        switch (ch) {
-        case 1: //single integrating
-            Aw = Zero_Mat<ny, ny>();
-            break;
-        case 2: //double integrating
-            Aw = Identity<ny>();
-            break;
-        default:
-            throw std::invalid_argument("Unsupported Unmeasured Disturbance Type");
-        }
-
-        Cw = Identity<ny>();
-        return Noise_Model_Mat{ Aw, Cw };
-    }
+    static Noise_Model_Mat eval_noise_model(int ch);
 
 private:
-    Aug_SS_Mat eval_aug_matrices(SS_Mat& ss_mat, Noise_Model_Mat& noise_mat) {
-        Eigen::Matrix<double, nx + 2 * ny, nx + 2 * ny> A_aug;
-        Eigen::Matrix<double, nx + 2 * ny, nu_m> Bm_aug;
-        Eigen::Matrix<double, nx + 2 * ny, nu_d> Bd_aug;
-        Eigen::Matrix<double, ny, nx + 2 * ny> C_aug;
-        
-        A_aug << ss_mat.Ad, Zero_Mat<nx, ny>(), Zero_Mat<nx, ny>(),
-            Zero_Mat<ny, nx>(), noise_mat.Aw, Zero_Mat<ny, ny>(),
-            ss_mat.Cd* ss_mat.Ad, noise_mat.Aw, Identity<ny>();
-
-        Bm_aug << ss_mat.Bd_m,
-            Zero_Mat<ny, nu_m>(),
-            ss_mat.Cd* ss_mat.Bd_m;
-
-        Bd_aug << ss_mat.Bd_d,
-            Zero_Mat<ny, nu_d>(),
-            ss_mat.Cd* ss_mat.Bd_d;
-
-        C_aug << Zero_Mat<ny, nx>(), Zero_Mat<ny, ny>(), Identity<ny>();
-        return Aug_SS_Mat{ A_aug, Bm_aug, Bd_aug, C_aug };
-    } 
-
-    Ctrl_Mat controller_mat(Aug_SS_Mat aug_mat) {
-        Eigen::Matrix<double, ny* p, nx + 2 * ny> Sx;
-        Eigen::Matrix<double, ny* p, nu_m* m> Su;
-        Eigen::Matrix<double, ny* p, nu_d* m> Sd;
-
-        Sx.setZero();
-        Su.setZero();
-        Sd.setZero();
-
-
-        Eigen::Matrix<double, nx + 2*ny , nx + 2*ny> A_power = aug_mat.A_aug;
-
-        Sx.block(0, 0, ny, nx + 2*ny) = aug_mat.C_aug * aug_mat.A_aug;
-        for (int i = 1; i < p; i += 1) {
-            Sx.block(i * ny, 0, ny, nx+2*ny) = aug_mat.C_aug * A_power;
-            A_power *= aug_mat.A_aug;
-        }
-
-        Matrix<double, nx + 2 * ny, nx + 2 * ny> Apow = Identity<nx + 2 * ny>();
-        std::array<Eigen::Matrix<double, ny, nu_m>, p> CABm_blocks;
-        std::array<Eigen::Matrix<double, ny, nu_d>, p> CABd_blocks;
-
-        for (int i = 0; i < p; ++i) {
-            Apow *= aug_mat.A_aug;
-            CABm_blocks[i] = aug_mat.C_aug * Apow * aug_mat.Bm_aug;
-            CABd_blocks[i] = aug_mat.C_aug * Apow * aug_mat.Bd_aug;
-        }
-
-        for (int row = 0; row < p; ++row) {
-            for (int col = 0; col < m; ++col) {
-                if (row >= col) {
-                    Su.block<ny, nu_m>(row * ny, col * nu_m) = CABm_blocks[row - col];
-                    Sd.block<ny, nu_d>(row * ny, col * nu_d) = CABd_blocks[row - col];
-
-                }
-            }
-        }
-
-
-
-        auto I_y = Identity<ny>();
-        auto ones = Matrix<double, p, 1>::Ones();
-        auto Ip = Eigen::kroneckerProduct(ones, I_y);
-        return Ctrl_Mat{ Sx, Su, Sd, Ip };
-    }
-
-    auto discretize(Eigen::Matrix<double, nx, nx>& A, const Eigen::Matrix<double, nx, nu>& B) {
-        Eigen::Matrix<double, nx, nx> Ad = (A * ts).exp();
-        auto I = Identity<nx>();
-        Eigen::Matrix<double, nx, nu> Bd = A.inverse() * (Ad - I) * B;
-        Eigen::Matrix<double, nx, nu_m> Bd_m = Bd.block(0, 0, nx, nu_m);
-        Eigen::Matrix<double, nx, nu_d> Bd_d = Bd.block(0, nu_m, nx, nu_d);
-
-        return std::make_tuple(Ad, Bd_m, Bd_d);
-    }
-
-
-    SS_Mat compute_mat() {
-        Eigen::Matrix<double, nx, nx> A;
-        Eigen::Matrix<double, nx, nu> B;
-        Eigen::Matrix<double, ny, nx> C;
-
-        A << -Betai * Ii - mu - kvi, -Betai * Si,
-            Betai* Ii, Betai* Si - Gammai - mu;
-        B << -Si * Ii, -Si,
-            Si* Ii, 0;
-        C << 0, 1;
-
-        auto mat = discretize(A, B);
-        auto& Ad = std::get<0>(mat);
-        auto& Bd_m = std::get<1>(mat);
-        auto& Bd_d = std::get<2>(mat);
-
-        return SS_Mat{ Ad, Bd_m, Bd_d, C };
-    }
-
-    
+    Aug_SS_Mat eval_aug_matrices(SS_Mat& ss_mat, Noise_Model_Mat& noise_mat);
+    Ctrl_Mat controller_mat(Aug_SS_Mat aug_mat);
+    auto discretize(Eigen::Matrix<double, nx, nx>& A, const Eigen::Matrix<double, nx, nu>& B);
+    SS_Mat compute_mat();    
 };
 
 
@@ -252,7 +140,6 @@ public:
     Eigen::Matrix<double, ny, 1> fa;
     Eigen::Matrix<double, nx + 2 * ny, ny> Kf;
 
-
     three_dof_tuning()
         : alpha_r(compute_alpha(tau_r, true)),
         alpha_d(compute_alpha(tau_d, true)),
@@ -261,8 +148,6 @@ public:
         auto noise = Matrices::eval_noise_model(noise_choice);
         Kf = compute_Kf(fa, noise.Aw);
     }
-
-
 private:
     template <typename T_alpha>
     Eigen::Matrix<double, ny, 1> compute_alpha(const T_alpha& tau, bool choice) {
@@ -276,18 +161,7 @@ private:
         return choice ? alpha : 1.0 - alpha.array();
     }
 
-    Eigen::Matrix<double, nx + 2 * ny, ny> compute_Kf(const Eigen::Matrix<double, ny, 1>& fa, const Eigen::Matrix<double, ny, ny>& Aw) {
-        Eigen::Matrix<double,ny, ny> Fa = fa.asDiagonal();
-        Eigen::Matrix<double, ny, ny> Fb = Fa.pow(2) * (Identity<ny>() + Aw - Aw * Fa).inverse();
-        Eigen::Matrix<double, nx, ny> Zero_x = Zero_Mat<nx, ny>();
-
-        Eigen::Matrix<double, nx + 2 * ny, ny> Kf;
-        Kf << Zero_x,
-            Fb,
-            Fa;
-        return Kf;
-    }
-
+    Eigen::Matrix<double, nx + 2 * ny, ny> compute_Kf(const Eigen::Matrix<double, ny, 1>& fa, const Eigen::Matrix<double, ny, ny>& Aw);
 };
 
 
@@ -341,26 +215,9 @@ public:
     }
 
 private:
-    Eigen::Matrix<double, ant_len, ny> make_ref() {
-        Eigen::Matrix<double, ant_len, ny> r = Eigen::Matrix<double, ant_len, ny>::Zero();
-        r.block(0, 0, ref_time, ny) = y_init.replicate(ref_time, 1);
-        r.block(ref_time, 0, ant_len - ref_time, ny) = (y_init + del_sp).replicate(ant_len - ref_time, 1);
-        return r;
-    }
-
-    Eigen::Matrix<double, ant_len, nu_d> make_dm() {
-        Eigen::Matrix<double, ant_len, nu_d> d = Eigen::Matrix<double, ant_len, nu_d>::Zero();
-        d.block(0, 0, dm_time, nu_d) = dm_init.transpose().replicate(dm_time, 1);
-        d.block(dm_time, 0, ant_len - dm_time, nu_d) = (dm_init + del_dm).transpose().replicate(ant_len - dm_time, 1);
-        return d;
-    }
-
-    Eigen::Matrix<double, Tstop, ny> make_du() {
-        Eigen::Matrix<double, Tstop, ny> u = Eigen::Matrix<double, Tstop, ny>::Zero();
-        u.block(0, 0, du_time, ny) = (du_init).transpose().replicate(du_time, 1);
-        u.block(du_time, 0, Tstop - du_time, ny) = (du_init + del_du).transpose().replicate(Tstop - du_time, 1);
-        return u;
-    }
+    Eigen::Matrix<double, ant_len, ny> make_ref();
+    Eigen::Matrix<double, ant_len, nu_d> make_dm();
+    Eigen::Matrix<double, Tstop, ny> make_du();
     template<int sig_len, int nu_v>
     Eigen::Matrix<double, sig_len, nu_v> type1_filt_func(const Eigen::Matrix<double, sig_len, nu_v>& sig,
             const Eigen::Matrix<double, nu_v, 1>& alpha);
@@ -401,11 +258,11 @@ Signals::type1_filt_func(const Eigen::Matrix<double, ant_len, nu_v>& sig,
 //
 // Structures:
 // - Weights: Contains the QP cost function matrices:
-//   - H_u: The Hessian matrix for the manipulated variable increments (m*nu_m x m*nu_m), combining output tracking and input move suppression weights.
-//   - Grad_coeff: The gradient coefficient matrix (m*nu_m x p*ny), used in the QP cost function for output tracking.
+//   - H_u: The Hessian matrix for the manipulated variable increments (u_len_m x u_len_m), combining output tracking and input move suppression weights.
+//   - Grad_coeff: The gradient coefficient matrix (u_len_m x p*ny), used in the QP cost function for output tracking.
 //
 // - Lims: Contains all constraint matrices and vectors for the QP problem:
-//   - Cu: The stacked constraint matrix for input, input increment, and output constraints (Cu_len x m*nu_m).
+//   - Cu: The stacked constraint matrix for input, input increment, and output constraints (Cu_len x u_len_m).
 //   - y_max_lim, y_min_lim: Output upper and lower bounds over the prediction horizon (y_len_p x 1).
 //   - u_max_lim, u_min_lim: Input upper and lower bounds over the control horizon (u_len_m x 1).
 //   - delu_max_lim, delu_min_lim: Move size increment upper and lower bounds (u_len_m x 1).
@@ -429,16 +286,12 @@ Signals::type1_filt_func(const Eigen::Matrix<double, ant_len, nu_v>& sig,
 class Weights_Lims {
 public:
     struct Weights {
-        Eigen::Matrix<double, m* nu_m, m* nu_m> H_u;
-        Eigen::Matrix<double, m* nu_m, p*ny> Grad_coeff;
+        Eigen::Matrix<double, u_len_m, u_len_m> H_u;
+        Eigen::Matrix<double, u_len_m, p*ny> Grad_coeff;
 
     };
     struct Lims {
-        static constexpr int u_len_m = nu_m * m;
-        static constexpr int y_len_p = ny * p;
-        static constexpr int Cu_len = 4 * u_len_m + 2 * y_len_p;
-
-        Eigen::Matrix <double, Cu_len, nu_m*m> Cu;
+        Eigen::Matrix <double, Cu_len, u_len_m> Cu;
         Eigen::Matrix<double, y_len_p, 1> y_max_lim;
         Eigen::Matrix<double, y_len_p, 1> y_min_lim;
         Eigen::Matrix<double, u_len_m, 1> u_max_lim;
@@ -456,53 +309,10 @@ public:
         weight_mats = def_Weights(mats.ctrl_mat.Su);
         lim_mats = def_Lims(mats.ctrl_mat.Su);
     }
+
 private:
-    Weights def_Weights(const Eigen::Matrix<double, ny* p, nu_m* m>& Su) {
-       auto Wy_vec = wy.replicate(p, 1).eval();
-       auto Wy = Wy_vec.asDiagonal();
-
-       auto Wdu_vec = wdu.replicate(m, 1).eval();
-       auto Wdu = Wdu_vec.asDiagonal();
-
-       auto Wdu_squared = Wdu.diagonal().array().square().matrix().asDiagonal().toDenseMatrix().eval();
-       
-       auto H_u = Su.transpose() * Wy * Wy * Su + Wdu_squared;
-       auto G_coeff = 2 * Su.transpose() * Wy * Wy;
-
-        return Weights{ H_u.eval(), G_coeff.eval()};
-    }
-    Lims def_Lims(Eigen::Matrix<double,ny*p,nu_m*m> Su) {
-        auto I = Identity<nu_m>();
-        Eigen::Matrix<double, nu_m* m, nu_m* m> I_L;
-        I_L.setZero();
-        
-        for (int row = 0; row < m; ++row) {
-            for (int col = 0; col <= row; ++col) {
-                I_L.block(row * nu_m, col * nu_m, nu_m, nu_m) = I;
-            }
-        }
-        
-        auto I_u = Identity<nu_m*m>();
-        Eigen::Matrix<double, 4 * nu_m * m + 2 * ny * p, m*nu_m> Cu;
-        
-
-        Cu << -I_L,
-            I_L,
-            -I_u,
-            I_u,
-            -Su,
-            Su;
-
-        Eigen::Matrix<double, ny* p, 1> y_max_lim = y_max.replicate(p, 1);
-        Eigen::Matrix<double, ny* p, 1> y_min_lim = y_min.replicate(p, 1);
-        Eigen::Matrix<double, nu_m* m, 1> u_max_lim = u_max.replicate(m, 1);
-        Eigen::Matrix<double, nu_m* m, 1> u_min_lim = u_min.replicate(m, 1);
-        Eigen::Matrix<double, nu_m* m, 1> delu_max_lim = delu_max.replicate(m, 1);
-        Eigen::Matrix<double, nu_m* m, 1> delu_min_lim = delu_min.replicate(m, 1);        
-        
-        return Lims{ Cu,  y_max_lim , y_min_lim , u_max_lim , u_min_lim , delu_max_lim , delu_min_lim };
-    }
-    
+    Weights def_Weights(const Eigen::Matrix<double, ny* p, u_len_m>& Su);
+    Lims def_Lims(Eigen::Matrix<double, ny* p, u_len_m> Su);
 };
 
 
