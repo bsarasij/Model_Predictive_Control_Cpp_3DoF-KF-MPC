@@ -79,3 +79,4 @@ install/
 # Package manager files
 vcpkg_installed/
 conan/ 
+CMakeLists.txt
